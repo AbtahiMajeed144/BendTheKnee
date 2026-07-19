@@ -181,9 +181,11 @@ def train(argv):
                 loss_cfm = torch.mean((vt - ut) ** 2)
                 curl_loss = torch.mean((jvp_out - vjp_out) ** 2)
                 loss = loss_cfm + FLAGS.lambda_curl * curl_loss
+                pbar.set_postfix({"loss": f"{loss.item():.4f}", "cfm": f"{loss_cfm.item():.4f}", "curl": f"{curl_loss.item():.4f}"})
             else:
                 vt = net_model(t, xt)
                 loss = torch.mean((vt - ut) ** 2)
+                pbar.set_postfix({"loss": f"{loss.item():.4f}"})
             loss.backward()
             torch.nn.utils.clip_grad_norm_(net_model.parameters(), FLAGS.grad_clip)  # new
             optim.step()
