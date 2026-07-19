@@ -1,0 +1,151 @@
+
+--- curl-certificate/literatures\2403.13117v3.pdf --- 
+Optimal Flow Matching:
+Learning Straight Trajectories in Just One Step
+Nikita Kornilov
+Skolkovo Institute of Science and Technology
+R.Center for AI, Innopolis University
+Moscow Institute of Physics and Technology
+kornilov.nm@phystech.eduPetr Mokrov
+Skolkovo Institute of Science and Technology
+petr.mokrov@skoltech.ru
+Alexander Gasnikov
+Innopolis University
+Moscow Institute of Physics and Technology
+Steklov Mathematical Institute of RAS∗
+gasnikov@yandex.ruAlexander Korotin
+Skolkovo Institute of Science and Technology
+Artificial Intelligence Research Institute
+a.korotin@skoltech.ru
+Abstract
+Over the several recent years, there has been a boom in development of Flow
+Matching (FM) methods for generative modeling. One intriguing property pursued
+by the community is the ability to learn flows with straight trajectories which
+realize the Optimal Transport (OT) displacements. Straightness is crucial for the
+fast integration (inference) of the learned flow’s paths. Unfortunately, most existing
+flow straightening methods are based on non-trivial iterative FM procedures which
+accumulate the error during training or exploit heuristics based on minibatch OT. To
+address these issues, we develop and theoretically justify the novel Optimal Flow
+Matching (OFM) approach which allows recovering the straight OT displacement
+for the quadratic transport in just one FM step. The main idea of our approach is the
+employment of vector field for FM which are parameterized by convex functions.
+The code of our OFM implementation and the conducted experiments is available
+athttps://github.com/Jhomanik/Optimal-Flow-Matching .
+1 Introduction
+Recent success in generative modeling Liu et al. [2024], Esser et al. [2024], Cao et al. [2024] is mostly
+driven by Flow Matching (FM) Lipman et al. [2023] models. These models move a known distribution
+to a target one via ordinary differential equations (ODE) describing the mass movement. However,
+such processes usually have curved trajectories, resulting in t
+
+--- curl-certificate/literatures\2509.24936v2.pdf --- 
+December 23, 2025
+OAT-FM: Optimal Acceleration Transport for Improved
+Flow Matching
+Angxiao Yue∗1,Anqi Dong∗2,Hongteng Xu†1, 3, 4
+1Gaoling School of Artificial Intelligence, Renmin University of China
+2Division of Decision and Control Systems and Department of Mathematics, KTH Royal Institute of Technology
+3Beijing Key Laboratory of Research on Large Models and Intelligent Governance
+4Engineering Research Center of Next-Generation Intelligent Search and Recommendation, MOE
+Abstract
+As a powerful technique in generative modeling, Flow Matching (FM) aims to learn velocity fields
+from noise to data, which is often explained and implemented as solving Optimal Transport (OT)
+problems. In this study, we bridge FM and the recent theory of Optimal Acceleration Transport
+(OAT), developing an improved FM method called OAT-FM and exploring its benefits in both theory
+and practice. In particular, we demonstrate that the straightening objective hidden in existing OT-
+based FM methods is mathematically equivalent to minimizing the physical action associated with
+acceleration defined by OAT. Accordingly, instead of enforcing constant velocity, OAT-FM optimizes
+the acceleration transport in the product space of sample and velocity, whose objective corresponds to
+a necessary and sufficient condition of flow straightness. An efficient algorithm is designed to achieve
+OAT-FM with low complexity. OAT-FM motivates a new two-phase FM paradigm: Given a generative
+model trained by an arbitrary FM method, whose velocity information has been relatively reliable,
+we can fine-tune and improve it via OAT-FM. This paradigm eliminates the risk of data distribution
+drift and the need to generate a large number of noise data pairs, which consistently improves model
+performance in various generative tasks. Code: https://github.com/AngxiaoYue/OAT-FM.
+SampleSampleVelocityVelocitySampleSamplePhase 2OAT-FM in the product spacePhase 1FM in the sample spacePenalizing the upper bound ofOptimal Acceleration
+
+--- curl-certificate/literatures\2510.26645v1.pdf --- 
+Curly Flow Matching for
+Learning Non-gradient Field Dynamics
+Katarina Petrovi ´c1∗, Lazar Atanackovic2,3,4, Viggo Moro1, Kacper Kapu ´sniak1,
+˙Ismail ˙Ilkan Ceylan5,6,1,Michael Bronstein1,6,Avishek Joey Bose1,7†, Alexander Tong6,7,8†
+1University of Oxford,2Broad Institute of MIT and Harvard,3University of Toronto,
+4Vector Institute,5TU Wien,6AITHYRA,7Mila – Quebec AI Institute,8Université de Montréal
+Abstract
+Modeling the transport dynamics of natural processes from population-level
+observations is a ubiquitous problem in the natural sciences. Such models rely on
+key assumptions about the underlying process in order to enable faithful learning
+of governing dynamics that mimic the actual system behavior. The de facto
+assumption in current approaches relies on the principle of least action that results
+in gradient field dynamics and leads to trajectories minimizing an energy functional
+between two probability measures. However, many real-world systems, such as cell
+cycles in single-cell RNA, are known to exhibit non-gradient, periodic behavior,
+whichfundamentallycannot be captured by current state-of-the-art methods such
+as flow and bridge matching. In this paper, we introduce CURLYFLOWMATCH-
+ING(CURLY-FM), a novel approach that is capable of learning non-gradient field
+dynamics by designing and solving a Schrödinger bridge problem with a non-zero
+drift reference process—in stark contrast to typical zero-drift reference processes—
+which is constructed usinginferred velocitiesin addition to population snapshot
+data. We showcase CURLY-FM by solving the trajectory inference problems for
+single cells, computational fluid dynamics, and ocean currents with approximate
+velocities. We demonstrate that CURLY-FM can learn trajectories that better match
+both the reference process and population marginals. CURLY-FM expands flow
+matching models beyond the modeling of populations and towards the modeling
+of known periodic behavior in physical systems. Our code repository is accessi
+
+--- curl-certificate/literatures\2512.16768v3.pdf --- 
+On the Hidden Biases of Flow Matching Samplers
+Soon Hoe Lim1,2∗
+1Department of Mathematics, KTH Royal Institute of Technology
+2Nordita, KTH Royal Institute of Technology and Stockholm University
+May 15, 2026
+Abstract
+Flow matching (FM) constructs continuous-time ODE samplers by prescribing probability
+paths between a base distribution and a target distribution. In this note, we study FM through
+the lens of finite-sample plug-in estimation. In addition to replacing population expectations
+by sample averages, one may replace the target distribution itself by a finite-sample surrogate,
+ranging from the empirical measure to a smoothed estimator. This viewpoint yields a natural
+hierarchy of empirical FM models. For affine conditional flows, we derive the exact empirical
+minimizer and identify a smoothed plug-in regime in which the terminal law is exactly a
+kernel-mixture estimator. This plug-in perspective clarifies several coupled finite-sample
+biases of empirical FM. First, replacing the target law by a finite-sample surrogate changes
+the statistical target. Second, the empirical minimizer is generally not a gradient field, even
+when each conditional flow is. Third, a fixed empirical marginal path does not determine a
+unique particle dynamics: one may add extra vector fields whose probability flux has zero
+divergence without changing the marginal path. For Gaussian affine conditional paths, we
+give explicit families of such flux-null corrections. Finally, the source distribution provides a
+primary mechanism controlling upper tails of kinetic energy. In particular, Gaussian bases
+yield exponential upper-tail bounds for instantaneous and integrated kinetic energies, whereas
+polynomially tailed bases yield corresponding polynomial upper-tail bounds.
+1 Introduction
+The main goal of generative modeling is to use finitely many samples from an unknown target
+distribution to construct a sampler capable of generating new samples from the same distribution.
+Among recent approach
+
+--- curl-certificate/literatures\2604.04491v1.pdf --- 
+Isokinetic Flow Matching for Pathwise Straightening
+of Generative Flows
+Tauhid Khan
+Abstract
+Flow Matching (FM) constructs linear conditional probability paths, but the learnedmarginalvelocity
+field inevitably exhibits strong curvature due to trajectory superposition. This curvature severely inflates
+numerical truncation errors, bottlenecking few-step sampling. To overcome this, we introduceIsokinetic
+Flow Matching (Iso-FM), a lightweight,Jacobian-freedynamical regularizer that directly penalizes
+pathwise acceleration. By using a self-guided finite-difference approximation of the material derivative
+Dv/Dt, Iso-FM enforces local velocity consistency without requiring auxiliary encoders or expensive
+second-order autodifferentiation. Operating as a pureplug-and-playaddition to single-stage FM training,
+Iso-FM dramatically improves few-step generation. On CIFAR-10 (DiT-S/2), Iso-FM slashes conditional
+non-OT FID@2 from 78.82 to 27.13—a2.9×relative efficiency gain—and reaches a best-observed
+FID@4 of 10.23. These results firmly establish acceleration regularization as a principled, compute-
+efficient mechanism for fast generative sampling.
+1 Introduction
+This paper studies sampling efficiency in flow-based generative modeling through transport dynamics
+rather than model scaling. Our premise is that few-step quality is governed by thedynamical straightness
+of the learned velocity field. The key quantity is the material derivative
+Dv
+Dt=∂tv+ (v· ∇ x)v,(1)
+which measures acceleration along trajectories. When∥Dv/Dt∥is large, coarse ODE integration incurs
+large truncation error; when it is small, trajectories are closer to constant-velocity transport and are
+easier to integrate with few NFEs.
+Iso-FM targets this mechanism with a Jacobian-free regularizer implemented by one lookahead model
+evaluation and stop-gradient matching, while preserving the standard FM objective and single-stage
+training loop. We evaluate Iso-FM as a controlled augmentation to FM (not as an absolute SO
