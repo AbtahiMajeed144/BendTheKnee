@@ -101,7 +101,7 @@ def main():
     
     # Generation Settings
     TOTAL_IMAGES = 10000
-    BATCH_SIZE = 4 # Reduced drastically to avoid OOM with torch.func.jvp
+    BATCH_SIZE = 2 # Reduced drastically to avoid OOM with torch.func.jvp
     NFE = 10
     
     all_generated_images = []
