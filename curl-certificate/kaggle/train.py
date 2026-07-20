@@ -54,8 +54,18 @@ use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
 
 
-def warmup_lr(step):
-    return min(step, FLAGS.warmup) / FLAGS.warmup
+import math
+
+def warmup_cosine_lr(step):
+    if step < FLAGS.warmup:
+        # Linear warmup
+        return max(0.0, float(step) / float(max(1.0, FLAGS.warmup)))
+    else:
+        # Cosine decay
+        progress = float(step - FLAGS.warmup) / float(max(1.0, FLAGS.total_steps - FLAGS.warmup))
+        # Clamp progress to 1.0 to prevent negative LR if steps exceed total_steps
+        progress = min(1.0, progress)
+        return 0.5 * (1.0 + math.cos(math.pi * progress))
 
 
 def train(argv):
@@ -122,7 +132,7 @@ def train(argv):
         net_model.load_state_dict(checkpoint["net_model"])
         ema_model.load_state_dict(checkpoint["ema_model"])
     optim = torch.optim.Adam(net_model.parameters(), lr=FLAGS.lr)
-    sched = torch.optim.lr_scheduler.LambdaLR(optim, lr_lambda=warmup_lr)
+    sched = torch.optim.lr_scheduler.LambdaLR(optim, lr_lambda=warmup_cosine_lr)
     if FLAGS.parallel:
         print(
             "Warning: parallel training is performing slightly worse than single GPU training due to statistics computation in dataparallel. We recommend to train over a single GPU, which requires around 8 Gb of GPU memory."
