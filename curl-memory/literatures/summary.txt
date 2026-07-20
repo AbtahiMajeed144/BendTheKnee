@@ -1,0 +1,785 @@
+
+
+==================================================
+PAPER: 2403.13117v3.pdf
+==================================================
+
+--- Page 1 ---
+Optimal Flow Matching:
+Learning Straight Trajectories in Just One Step
+Nikita Kornilov
+Skolkovo Institute of Science and Technology
+R.Center for AI, Innopolis University
+Moscow Institute of Physics and Technology
+kornilov.nm@phystech.eduPetr Mokrov
+Skolkovo Institute of Science and Technology
+petr.mokrov@skoltech.ru
+Alexander Gasnikov
+Innopolis University
+Moscow Institute of Physics and Technology
+Steklov Mathematical Institute of RAS∗
+gasnikov@yandex.ruAlexander Korotin
+Skolkovo Institute of Science and Technology
+Artificial Intelligence Research Institute
+a.korotin@skoltech.ru
+Abstract
+Over the several recent years, there has been a boom in development of Flow
+Matching (FM) methods for generative modeling. One intriguing property pursued
+by the community is the ability to learn flows with straight trajectories which
+realize the Optimal Transport (OT) displacements. Straightness is crucial for the
+fast integration (inference) of the learned flow’s paths. Unfortunately, most existing
+flow straightening methods are based on non-trivial iterative FM procedures which
+accumulate the error during training or exploit heuristics based on minibatch OT. To
+address these issues, we develop and theoretically justify the novel Optimal Flow
+Matching (OFM) approach which allows recovering the straight OT displacement
+for the quadratic transport in just one FM step. The main idea of our approach is the
+employment of vector field for FM which are parameterized by convex functions.
+The code of our OFM implementation and the conducted experiments is available
+athttps://github.com/Jhomanik/Optimal-Flow-Matching .
+1 Introduction
+Recent success in generative modeling Liu et al. [2024], Esser et al. [2024], Cao et al. [2024] is mostly
+driven by Flow Matching (FM) Lipman et al. [2023] models. These models move a known distribution
+to a target one via ordinary differential equations (ODE) describing the mass movement. However,
+such processes usually have curved trajectories, resulting in time-consuming ODE integration for
+sampling. To overcome this issue, researches developed several improvements of the FM Liu [2022],
+Liu et al. [2023], Pooladian et al. [2023], which aim to recover more straight paths.
+Rectified Flow (RF) method Liu [2022], Liu et al. [2023] iteratively solves FM and gradually rectifies
+trajectories. Unfortunately, in each FM iteration, it accumulates the error , see [Liu et al., 2023,
+§2.2] and [Liu, 2022, §6]. This may spoil the performance of the method. The other popular branch
+of approaches to straighten trajectories is based on the connection between straight paths and Optimal
+Transport (OT) Villani [2021]. The main goal of OT is to find the way to move one probability
+distribution to another with the minimal effort. Such OT maps are usually described by ODEs with
+straight trajectories. In OT Conditional Flow Matching (OT-CFM) Pooladian et al. [2023], Tong et al.
+[2024], the authors propose to apply FM on top of OT solution between batches from considered
+∗Russian Academy of Sciences
+38th Conference on Neural Information Processing Systems (NeurIPS 2024).arXiv:2403.13117v3  [stat.ML]  7 Nov 2024
+--- Page 2 ---
+distributions. Unfortunately, such a heuristic does not guarantee straight paths because of minibatch
+OT biases , see, e.g., [Tong et al., 2024, Figure 1, right] for the practical illustration.
+Contributions. In this paper, we fix the above-mentioned problems of the straightening meth-
+ods. We propose a novel Optimal Flow Matching (OFM) approach ( §3) that after a single FM
+iteration obtains straight trajectories which can be simulated without ODE solving. It recovers
+OT flow for the quadratic transport cost function, i.e., it solves the Benamou–Brenier problem
+(Figure 1). We demonstrate the potential of OFM in the series of experiments and benchmarks ( §4).
+Optimal Flow Matching
+(just one step, ours)
+Figure 1: Our Optimal Flow
+Matching (OFM). For anyini-
+tial transport plan πbetween
+p0andp1, OFM obtains ex-
+actly straight trajectories (in
+just a single FM loss min-
+imization) which carry out
+the OT displacement for the
+quadratic cost function.The main idea of our OFM is to consider during FM only specific
+vector fields which yield straight paths by design. These vector
+fields are the gradients of convex functions, which in practice are
+parametrized by Input Convex Neural Networks Amos et al. [2017].
+In OFM, one can optionally use minibatch OT or any other transport
+plan as the input, and this is completely theoretically justified.
+2 Background and Related Works
+In this section, we provide all necessary backgrounds for the theory.
+First, we recall static ( §2.1) and dynamic ( §2.2) formulations of
+Optimal Transport and solvers ( §2.3) for them. Then, we recall Flow
+Matching ( §2.4.1) and flow straightening approaches: OT-CFM
+(§2.4.2) and Rectified Flow ( §2.4.3).
+Notations. For vectors x, y∈RD, we denote the inner product
+by⟨x, y⟩and the corresponding ℓ2norm by ∥x∥:=p
+⟨x, x⟩. We
+useP2,ac(RD)to refer to the set of absolute continuous probability
+distributions with the finite second moment. For vector x∈RDand
+distribution p∈ P2,ac(RD), notation x∼pmeans that xis sampled
+from p. For the push-forward operator, we use symbol #.
+2.1 Static Optimal Transport
+Monge’s and Kantorovich’s formulations. Consider two distributions p0, p1∈ P2,ac(RD)and a
+cost function c:RD×RD→R. Monge’s Optimal Transport formulation is given by
+inf
+T#p0=p1Z
+RDc(x0, T(x0))p0(x0)dx0, (1)
+where the infimum is taken over measurable functions T:RD→RDwhich satisfy the mass-
+preserving constraint T#p0=p1. Such functions are called transport maps. If there exists a
+transport map T∗that achieves the infimum, then it is called the optimal transport map.
+Since the optimal transport map T∗in Monge’s formulation may not exist, there is Kantorovich’s
+relaxation for problem (1)which addresses this issue. Consider the set of transport plans Π(p0, p1),
+i.e., the set of joint distributions on RD×RDwhich marginals are equal to p0andp1, respectively.
+Kantorovich’s Optimal Transport formulation is
+inf
+π∈Π(p0,p1)Z
+RD×RDc(x0, x1)π(x0, x1)dx0dx1. (2)
+With mild assumptions on p0, p1, the infimum is always achieved (possibly not uniquely). An optimal
+planπ∗∈Π(p0, p1)is called an optimal transport plan. If optimal π∗has the form [id, T∗]#p0, then
+T∗is the solution of Monge’s formulation (1).
+Quadratic cost function. In our paper, we mostly consider the quadratic cost function c(x0, x1) =
+∥x0−x1∥2
+2. In this case, infimums in both Monge’s and Kantorovich’s OT are always uniquely attained
+[Villani, 2021, Brenier’s Theorem 2.12]. They are related by π∗= [id, T∗]#p0. Moreover, the
+optimal values of (1)and(2)are equal to each other. The square root of the optimal value is called
+2
+--- Page 3 ---
+the Wasserstein-2 distance W2(p0, p1)between distributions p0andp1, i.e.,
+W2
+2(p0, p1) := min
+π∈Π(p0,p1)Z
+RD×RD∥x1−x0∥2
+2π(x0, x1)dx0dx1
+= min
+T#p0=p1Z
+RD∥x0−T(x0)∥2
+2p0(x0)dx0. (3)
+Dual formulation. For the quadratic cost, problem (3) has the equivalent dual form Villani [2021]:
+W2
+2(p0, p1) = CONST (p0, p1)−min
+convex ΨZ
+RDΨ(x0)p0(x0)dx0+Z
+RDΨ(x1)p1(x1)dx1
+| {z }
+=:LOT(Ψ),(4)
+where the minimum is taken over convex functions Ψ(x) :RD→R. Here Ψ(x1) :=
+supx0∈RD[⟨x0, x1⟩ −Ψ(x0)]is the convex (Fenchel) conjugate function of Ψ. It is also convex.
+The term CONST (p0, p1)does not depend on Ψ. Therefore, the minimization (3)over transport plans
+πis equivalent to the minimization of LOT(Ψ)from (4)over convex functions Ψ. Moreover, the
+optimal transport map T∗can be expressed via an optimal Ψ∗(theBrenier potential Villani [2021]),
+namely,
+T∗=∇Ψ∗. (5)
+2.2 Dynamic Optimal Transport
+In Benamou and Brenier [2000], the authors show that the calculation of Optimal Transport map in
+(3)for the quadratic cost can be equivalently reformulated in a dynamic form. This form operates
+with a vector fields defining time-dependent mass transport instead of just static transport maps.
+Preliminaries. We consider the fixed time interval [0,1]. Let u(t,·)≡ut(·) : [0,1]×RD→RD
+be a vector field and {{zt}t∈[0,1]}be the set of random trajectories such that for each trajectory
+{zt}t∈[0,1]the starting point z0is sampled from p0andztsatisfies the differential equation:
+dzt=ut(zt)dt, z 0∼p0. (6)
+In other words, the trajectory {zt}t∈[0,1]is defined by its initial point z0∼p0and goes along the
+speed vector ut(zt). Under mild assumptions on u, for each initial z0, the trajectory is unique.
+Letϕu(t,·)≡ϕu
+t(·) : [0,1]×RD→RDdenote the flow map, i.e., it is the function that maps the
+initial z0to its position at moment of time taccording to the ODE (6), i.e.,
+dϕu
+t(z0) = ut(ϕu
+t(z0)), ϕu
+0(z0) =z0. (7)
+If initial points z0of trajectories are distributed according to p0, then (6)defines a distribution ptof
+ztat time t, which can be expressed via with the push-forward operator, i.e., pu
+t:=ϕu
+t#p0.
+Benamou–Brenier problem. Dynamic OT is the following minimization problem:
+W2
+2(p0, p1) = inf
+uZ1
+0Z
+RD∥ut(xt)∥2
+2
+2ϕu
+t#p0(xt)|{z}
+:=pu
+t(xt)dxtdt, (8)
+s.t. ϕu
+1#p0=p1.
+In(8), we look for the vector fields uthat define the flows which start at p0and end at p1. Among
+such flows, we seek for the one which has the minimal kinetic energy over the entire time interval.
+There is a connection between the static OT map T∗=∇Ψ∗and the dynamic OT solution u∗.
+Namely, for every initial point z0, the vector field u∗defines a linear trajectory {zt}t∈[0,1]:
+zt=t∇Ψ∗(z0) + (1 −t)z0,∀t∈[0,1]. (9)
+3
+
+==================================================
+PAPER: 2509.24936v2.pdf
+==================================================
+
+--- Page 1 ---
+December 23, 2025
+OAT-FM: Optimal Acceleration Transport for Improved
+Flow Matching
+Angxiao Yue∗1,Anqi Dong∗2,Hongteng Xu†1, 3, 4
+1Gaoling School of Artificial Intelligence, Renmin University of China
+2Division of Decision and Control Systems and Department of Mathematics, KTH Royal Institute of Technology
+3Beijing Key Laboratory of Research on Large Models and Intelligent Governance
+4Engineering Research Center of Next-Generation Intelligent Search and Recommendation, MOE
+Abstract
+As a powerful technique in generative modeling, Flow Matching (FM) aims to learn velocity fields
+from noise to data, which is often explained and implemented as solving Optimal Transport (OT)
+problems. In this study, we bridge FM and the recent theory of Optimal Acceleration Transport
+(OAT), developing an improved FM method called OAT-FM and exploring its benefits in both theory
+and practice. In particular, we demonstrate that the straightening objective hidden in existing OT-
+based FM methods is mathematically equivalent to minimizing the physical action associated with
+acceleration defined by OAT. Accordingly, instead of enforcing constant velocity, OAT-FM optimizes
+the acceleration transport in the product space of sample and velocity, whose objective corresponds to
+a necessary and sufficient condition of flow straightness. An efficient algorithm is designed to achieve
+OAT-FM with low complexity. OAT-FM motivates a new two-phase FM paradigm: Given a generative
+model trained by an arbitrary FM method, whose velocity information has been relatively reliable,
+we can fine-tune and improve it via OAT-FM. This paradigm eliminates the risk of data distribution
+drift and the need to generate a large number of noise data pairs, which consistently improves model
+performance in various generative tasks. Code: https://github.com/AngxiaoYue/OAT-FM.
+SampleSampleVelocityVelocitySampleSamplePhase 2OAT-FM in the product spacePhase 1FM in the sample spacePenalizing the upper bound ofOptimal Acceleration Transport
+<latexit sha1_base64="HAMaZ46LcMGvi6ycGteU0lbLr/Q=">AAAB6nicbVBNS8NAEJ3Ur1q/qh69LBbBU0lEqheh6MVjRfsBbSib7aZdutmE3YlQQn+CFw+KePUXefPfuG1z0OqDgcd7M8zMCxIpDLrul1NYWV1b3yhulra2d3b3yvsHLROnmvEmi2WsOwE1XArFmyhQ8k6iOY0CydvB+Gbmtx+5NiJWDzhJuB/RoRKhYBStdI9Xbr9ccavuHOQv8XJSgRyNfvmzN4hZGnGFTFJjup6boJ9RjYJJPi31UsMTysZ0yLuWKhpx42fzU6fkxCoDEsbalkIyV39OZDQyZhIFtjOiODLL3kz8z+umGF76mVBJilyxxaIwlQRjMvubDITmDOXEEsq0sLcSNqKaMrTplGwI3vLLf0nrrOrVqrW780r9Oo+jCEdwDKfgwQXU4RYa0AQGQ3iCF3h1pPPsvDnvi9aCk88cwi84H9/T7Y2E</latexit>t=0<latexit sha1_base64="83SWqiO01K8LWZUnNBF0SQU8dTU=">AAAB6nicbVBNS8NAEJ3Ur1q/qh69LBbBU0lEqheh6MVjRfsBbSib7aZdutmE3YlQQn+CFw+KePUXefPfuG1z0OqDgcd7M8zMCxIpDLrul1NYWV1b3yhulra2d3b3yvsHLROnmvEmi2WsOwE1XArFmyhQ8k6iOY0CydvB+Gbmtx+5NiJWDzhJuB/RoRKhYBStdI9XXr9ccavuHOQv8XJSgRyNfvmzN4hZGnGFTFJjup6boJ9RjYJJPi31UsMTysZ0yLuWKhpx42fzU6fkxCoDEsbalkIyV39OZDQyZhIFtjOiODLL3kz8z+umGF76mVBJilyxxaIwlQRjMvubDITmDOXEEsq0sLcSNqKaMrTplGwI3vLLf0nrrOrVqrW780r9Oo+jCEdwDKfgwQXU4RYa0AQGQ3iCF3h1pPPsvDnvi9aCk88cwi84H9/VcY2F</latexit>t=1<latexit sha1_base64="83SWqiO01K8LWZUnNBF0SQU8dTU=">AAAB6nicbVBNS8NAEJ3Ur1q/qh69LBbBU0lEqheh6MVjRfsBbSib7aZdutmE3YlQQn+CFw+KePUXefPfuG1z0OqDgcd7M8zMCxIpDLrul1NYWV1b3yhulra2d3b3yvsHLROnmvEmi2WsOwE1XArFmyhQ8k6iOY0CydvB+Gbmtx+5NiJWDzhJuB/RoRKhYBStdI9XXr9ccavuHOQv8XJSgRyNfvmzN4hZGnGFTFJjup6boJ9RjYJJPi31UsMTysZ0yLuWKhpx42fzU6fkxCoDEsbalkIyV39OZDQyZhIFtjOiODLL3kz8z+umGF76mVBJilyxxaIwlQRjMvubDITmDOXEEsq0sLcSNqKaMrTplGwI3vLLf0nrrOrVqrW780r9Oo+jCEdwDKfgwQXU4RYa0AQGQ3iCF3h1pPPsvDnvi9aCk88cwi84H9/VcY2F</latexit>t=1
+<latexit sha1_base64="HAMaZ46LcMGvi6ycGteU0lbLr/Q=">AAAB6nicbVBNS8NAEJ3Ur1q/qh69LBbBU0lEqheh6MVjRfsBbSib7aZdutmE3YlQQn+CFw+KePUXefPfuG1z0OqDgcd7M8zMCxIpDLrul1NYWV1b3yhulra2d3b3yvsHLROnmvEmi2WsOwE1XArFmyhQ8k6iOY0CydvB+Gbmtx+5NiJWDzhJuB/RoRKhYBStdI9Xbr9ccavuHOQv8XJSgRyNfvmzN4hZGnGFTFJjup6boJ9RjYJJPi31UsMTysZ0yLuWKhpx42fzU6fkxCoDEsbalkIyV39OZDQyZhIFtjOiODLL3kz8z+umGF76mVBJilyxxaIwlQRjMvubDITmDOXEEsq0sLcSNqKaMrTplGwI3vLLf0nrrOrVqrW780r9Oo+jCEdwDKfgwQXU4RYa0AQGQ3iCF3h1pPPsvDnvi9aCk88cwi84H9/T7Y2E</latexit>t=0
+<latexit sha1_base64="A4DSZB2DaSGMw2I1qyrlLYyDadg=">AAAB9HicbVBNSwMxEJ2tX7V+VT16CRbBU9kVqR6LXjxWsB/QLks2zbahSXZNssWy9Hd48aCIV3+MN/+NabsHbX0w8Hhvhpl5YcKZNq777RTW1jc2t4rbpZ3dvf2D8uFRS8epIrRJYh6rTog15UzSpmGG006iKBYhp+1wdDvz22OqNIvlg5kk1Bd4IFnECDZW8p8Ct6eZ6KlhHLhBueJW3TnQKvFyUoEcjaD81evHJBVUGsKx1l3PTYyfYWUY4XRa6qWaJpiM8IB2LZVYUO1n86On6MwqfRTFypY0aK7+nsiw0HoiQtspsBnqZW8m/ud1UxNd+xmTSWqoJItFUcqRidEsAdRnihLDJ5Zgopi9FZEhVpgYm1PJhuAtv7xKWhdVr1at3V9W6jd5HEU4gVM4Bw+uoA530IAmEHiEZ3iFN2fsvDjvzseiteDkM8fwB87nD3EFkec=</latexit>x0→ω0<latexit sha1_base64="KechFacGtDrscBv+1Lxi+vD0wy4=">AAAB9HicbVBNSwMxEJ2tX7V+VT16CRbBU9kVqR6LXjxWsB/QLks2zbahSXZNssWy9Hd48aCIV3+MN/+NabsHbX0w8Hhvhpl5YcKZNq777RTW1jc2t4rbpZ3dvf2D8uFRS8epIrRJYh6rTog15UzSpmGG006iKBYhp+1wdDvz22OqNIvlg5kk1Bd4IFnECDZW8p8Cr6eZ6KlhHHhBueJW3TnQKvFyUoEcjaD81evHJBVUGsKx1l3PTYyfYWUY4XRa6qWaJpiM8IB2LZVYUO1n86On6MwqfRTFypY0aK7+nsiw0HoiQtspsBnqZW8m/ud1UxNd+xmTSWqoJItFUcqRidEsAdRnihLDJ5Zgopi9FZEhVpgYm1PJhuAtv7xKWhdVr1at3V9W6jd5HEU4gVM4Bw+uoA530IAmEHiEZ3iFN2fsvDjvzseiteDkM8fwB87nD3QXkek=</latexit>x1→ω1
+<latexit sha1_base64="N8+d1Qq7wEmAPvJ+pFcBDrt0fzw=">AAAB+nicbVBNS8NAEN34WetXqkcvi0WoICURqR6LXjxWsB/QhrDZbtulm03YnVRL7E/x4kERr/4Sb/4bt20O2vpg4PHeDDPzglhwDY7zba2srq1vbOa28ts7u3v7duGgoaNEUVankYhUKyCaCS5ZHTgI1ooVI2EgWDMY3kz95ogpzSN5D+OYeSHpS97jlICRfLsw8tMODBiQSenRhzM49e2iU3ZmwMvEzUgRZaj59lenG9EkZBKoIFq3XScGLyUKOBVsku8kmsWEDkmftQ2VJGTaS2enT/CJUbq4FylTEvBM/T2RklDrcRiYzpDAQC96U/E/r51A78pLuYwTYJLOF/USgSHC0xxwlytGQYwNIVRxcyumA6IIBZNW3oTgLr68TBrnZbdSrtxdFKvXWRw5dISOUQm56BJV0S2qoTqi6AE9o1f0Zj1ZL9a79TFvXbGymUP0B9bnDwXhk9s=</latexit>vω(xt,t)<latexit sha1_base64="ySF0obUhuOFEB2y3c4lvfQKphCs=">AAAB/HicbVDLSsNAFJ3UV62vaJduBotQQcpEpLosunFZwT6gCWEynbZDZ5IwMymGUH/FjQtF3Poh7vwbp20W2nrgwuGce7n3niDmTGmEvq3C2vrG5lZxu7Szu7d/YB8etVWUSEJbJOKR7AZYUc5C2tJMc9qNJcUi4LQTjG9nfmdCpWJR+KDTmHoCD0M2YARrI/l2ufroo3M48dGZq5hwReIj366gGpoDrhInJxWQo+nbX24/IomgoSYcK9VzUKy9DEvNCKfTkpsoGmMyxkPaMzTEgiovmx8/hadG6cNBJE2FGs7V3xMZFkqlIjCdAuuRWvZm4n9eL9GDay9jYZxoGpLFokHCoY7gLAnYZ5ISzVNDMJHM3ArJCEtMtMmrZEJwll9eJe2LmlOv1e8vK42bPI4iOAYnoAoccAUa4A40QQsQkIJn8ArerCfrxXq3PhatBSufKYM/sD5/ALoQk48=</latexit>(x0,v0)→µ0<latexit sha1_base64="8bkGWj8lLimLrw57qVfga0NDWXU=">AAAB/HicbVDLSsNAFJ3UV62vaJduBotQQUoiUl0W3bisYB/QhDCZTtuhM5MwMymGUH/FjQtF3Poh7vwbp20W2nrgwuGce7n3njBmVGnH+bYKa+sbm1vF7dLO7t7+gX141FZRIjFp4YhFshsiRRgVpKWpZqQbS4J4yEgnHN/O/M6ESEUj8aDTmPgcDQUdUIy0kQK7XH0M3HM4CdwzT1Hu8SRwA7vi1Jw54Cpxc1IBOZqB/eX1I5xwIjRmSKme68Taz5DUFDMyLXmJIjHCYzQkPUMF4kT52fz4KTw1Sh8OImlKaDhXf09kiCuV8tB0cqRHatmbif95vUQPrv2MijjRRODFokHCoI7gLAnYp5JgzVJDEJbU3ArxCEmEtcmrZEJwl19eJe2Lmluv1e8vK42bPI4iOAYnoApccAUa4A40QQtgkIJn8ArerCfrxXq3PhatBSufKYM/sD5/AL61k5I=</latexit>(x1,v1)→µ1
+<latexit sha1_base64="h/vvydR+2muBBWZm87V52YWqDqU=">AAACDnicbVDJSgNBEO2JW4zbqEcvjSGQQAgzItFj0IvHCGaBZBh6Oj1Jk56F7ppgGPIFXvwVLx4U8erZm39jZznExAcFj/eqqKrnxYIrsKwfI7OxubW9k93N7e0fHB6ZxydNFSWSsgaNRCTbHlFM8JA1gINg7VgyEniCtbzh7dRvjZhUPAofYBwzJyD9kPucEtCSaxaKIzftwoABmRQfXShDqYzJkljGUCq5Zt6qWDPgdWIvSB4tUHfN724voknAQqCCKNWxrRiclEjgVLBJrpsoFhM6JH3W0TQkAVNOOntnggta6WE/krpCwDN1eSIlgVLjwNOdAYGBWvWm4n9eJwH/2kl5GCfAQjpf5CcCQ4Sn2eAel4yCGGtCqOT6VkwHRBIKOsGcDsFefXmdNC8qdrVSvb/M124WcWTRGTpHRWSjK1RDd6iOGoiiJ/SC3tC78Wy8Gh/G57w1YyxmTtEfGF+/NdCa8Q==</latexit>(vω(xt,t),a(vω,t))Obtaining an Initial Velocity Field
+(a) A two-phase FM paradigm driven by OAT-FM
+ (b) Representative generation results
+Figure 1 .(a) The principle of OAT-FM and the corresponding two-phase FM paradigm. (b) We train SiT-XL (Ma et al.,
+2024) by our two-phase FM paradigm on the ImageNet 256×256 dataset (Deng et al., 2009).
+∗Equal contribution.
+†Corresponding author. Email: hongtengxu@ruc.edu.cn
+1arXiv:2509.24936v2  [cs.LG]  22 Dec 2025
+--- Page 2 ---
+1 Introduction
+As a promising generative modeling strategy, Flow Matching (FM) (Song et al., 2021a; Ho et al., 2020;
+Lipman et al., 2023) aims to learn a (deterministic or stochastic) velocity field capturing the transport of
+probability mass from a prior noise distribution to a complex data distribution. In general, the learned velocity
+field corresponds to a neural solver of a specific ordinary or stochastic differential equation. Therefore, in the
+inference phase, we can simulate the differential equation with discrete sampling steps, resulting in the flows
+from noise to data. Nowadays, flow matching has achieved competitive performance in various challenging
+generative tasks, e.g., image generation (Lipman et al., 2023; Esser et al., 2024), audio generation (Liu et al.,
+2024; Wang et al., 2024), protein design (Bose et al., 2024; Yue et al., 2025), and so on.
+Currently, sometwo-phase FM paradigmsare proposed to achieve high-quality generation efficiently.
+Typically, given a well-trained flow/diffusion model, Rectified Flow (ReFlow) (Liu et al., 2023) and its
+variants (Lee et al., 2024; Hu et al., 2025) iteratively refit each learned flow trajectory to its linear or piecewise
+linear approximation. Such a so-called rectification phase straightens the flow progressively and thus allows a
+large sampling step size (and thus requires few steps) during inference. In addition, self-distillation methods,
+like Consistency Distillation (CD) (Song et al., 2023; Yang et al., 2024), treat the given model as a teacher
+and learn an efficient student model to fit the flow trajectories created by the teacher. Essentially, both these
+two-phase FM paradigms utilize the velocity field of the given model in their phase-2 training, enhancing
+model efficiency while preventing severe performance degradation.
+In this study, we propose a novel improved FM method, called OAT-FM, based on the recent theory of
+Optimal Acceleration Transport (OAT) (Chen et al., 2018; Brigati et al., 2025), which provides a new way
+to leverage velocity information and leads to a new two-phase FM paradigm. As illustrated in Figure 1(a),
+OAT-FM minimizes the acceleration transport between the noise distribution and the data one defined in the
+product space of samples and their velocities. The implementation of OAT-FM corresponds to a bi-level
+optimization problem. In the lower-level, we solve an OAT problem, leveraging the endpoint velocity of
+flow to compute the Optimal Transport (OT) plan (or called coupling (Villani, 2021)) defined in the product
+space. In the context of FM, we can decompose the coupling and solve the OAT problem efficiently, whose
+complexity is the same with that of the classic OT problem (Peyré and Cuturi, 2019). Accordingly, we can
+sample noise-data pairs based on the OT plan during training. In the upper-level, we minimize an upper bound
+for the optimal acceleration transport from noise to data, which straightens flow trajectories with a theoretical
+guarantee. As shown in Figure 1(a), given an arbitrary flow/diffusion model, whose velocity information has
+been relatively reliable, we can continually refine it via our OAT-FM method and improve its performance.
+Different from existing OT-based FM methods (e.g., OT-CFM (Tong et al., 2024; Pooladian et al., 2023),
+OFM (Kornilov et al., 2024), and ReFlow (Liu, 2022; Hertrich et al., 2025)) and recent acceleration-driven FM
+methods (Chen et al., 2025a,b; Cao et al., 2025; Gong et al., 2025), OAT-FM applies a physically grounded
+objective tied directly to acceleration control and transport, whose straightening objective is mathematically
+equivalent to minimizing the physical action associated with acceleration defined by OAT. Compared with
+existing two-phase FM paradigms, such as ReFlow and CD, the paradigm based on OAT-FM neither requires
+generating a large number of paired training data nor relies on dense intermediate interpolation results, which
+eliminates the risk of data distribution drift. To our knowledge, OAT-FM makes the first attempt to explore
+the usefulness of acceleration-driven FM in high-dimensional generative tasks. As shown in Figure 1(b), the
+phase-2 training achieved by OAT-FM leads to promising high-resolution image generation results.
+2 Proposed Method
+2.1 Optimal Transport-based Flow Matching
+Most existing FM methods fall into a generalized Conditional Flow Matching (CFM) framework (Tong
+et al., 2024). Denote P(X) as the set of probability measures defined in a sample space X. Suppose that
+2
+--- Page 3 ---
+we have a data distribution ρ1∈P(X) and a noise one ρ0∈P(X) , respectively. Typically, we set ρ0as a
+normal distribution N(0,1) . CFM models the evolutionary sample distribution from ρ0toρ1conditioned
+on an auxiliary variable z, called conditional path and denoted as pt(x|z) (with t∈[0,1] ). It learns a neural
+network, denoted asv θ, to fit the velocity fieldv t(x|z)corresponding top t(x|z), i.e.,
+minθEz∼π, t∼Unif[0,1], x∼p t(·|z)[∥vθ(x, t)−v t(x|z)∥2], (1)
+where πdenotes the distribution of z. Once trained, the model generates new data from random noise by
+integrating parametrized velocities over time, i.e., ˆx1=gθ(x0) =x 0+R1
+0vθ(xt, t)dt , where x0∼ρ0. In
+practice, this generation process can be implemented by discrete Euler steps: Given the current xt, we set a
+step size ∆t, obtain xt+∆t =xt+ ∆t·v θ(xt, t)and update the timestamp by t←t+ ∆t . Repeating the
+above step tillt= 1leads to the generation result.
+In the CFM framework, the distribution πand the conditional path pt(x|z) play a central role, and different
+implementations result in various FM methods (Lim et al., 2024; Tong et al., 2024). For example, the early
+FM method in (Lipman et al., 2023) sets π=ρ 1andpt(x|z) as a Gaussian distribution N 
+tz,(tσ−t+ 1)2
+.
+The independent coupling CFM (I-CFM) sets π=ρ 0×ρ1, i.e., z= (x 0, x1)withx0∼ρ0andx1∼ρ1
+independently. Recently, some attempts have been made to interpret FM through the lens of optimal
+transport (Villani, 2021), leading to a series of optimal transport-based FM methods, e.g., OT-CFM (Tong
+et al., 2024; Pooladian et al., 2023) OFM (Kornilov et al., 2024), and kinetic FM (Shaul et al., 2023, 2025).
+Optimal Transport-based CFM (OT-CFM):Denote the Wasserstein-2 distance between ρ0andρ1as
+W2(ρ0, ρ1). The dynamic (Benamou–Brenier) formulation of optimal transport (Benamou and Brenier, 2000)
+seeks a unique least–kinetic–energy flowvcorresponding toW2
+2(ρ0, ρ1), i.e.,
+W2
+2(ρ0, ρ1) = min
+ρ, vZ1
+0Z
+X1
+2ρ(x, t)∥v(x, t)∥2
+2dxdt,(2)
+subject to the continuity equation ∂tρ+∇ x· 
+vρ
+= 0with boundary conditions ρ(·,0) =ρ 0andρ(·,1) =ρ 1.
+Accordingly, OT-CFM implements CFM by setting the distribution πin(1)as the OT plan corresponding to
+W2
+2(ρ0, ρ1), leading to the following bi-level optimization problem:
+min
+θUpper-level:L CFMz }| {
+E(x0,x1)∼π∗, t∼Unif[0,1] [∥vθ(xt, t)−(x 1−x0)∥2],s.t.π∗=Lower-level:W2
+2(ρ0,ρ1)z }| {
+arg min
+π∈Π(ρ 0,ρ1)Eπ[∥x1−x0∥2
+2],(3)
+where Π(ρ0, ρ1)denotes the set of couplings whose marginal distributions are ρ0andρ1, respectively Note
+that we can set the conditional path as the deterministic linear interpolation between x0andx1, i.e., given
+z= (x 0, x1),pt(x|z) =δ xtwithxt= (1−t)·x 0+t·ˆx 1. Accordingly, the velocity vt(x|z) becomes
+x1−x0.
+In theory, the objective function in (3)regresses vθ(xt, t)to the constant velocity x1−x0. This con-
+stant velocity equals the characteristic velocity on the Wasserstein geodesic when (x0, x1)are coupled
+optimally (McCann, 1997; Dong et al., 2024). In other words, training with π∗aligns vθ(x, t) with the
+least–kinetic–energy flow in (2), yielding straighter and more efficient flow trajectories. However, constant
+velocity is sufficient but not necessary for straightening flows.
+Proposition 1.The trajectory is straight if and only if the velocity direction is time invariant and the
+acceleration is everywhere parallel to the velocity. The classical (first-order) dynamical optimal transport is
+recovered as the special case with zero acceleration.
+Motivated by Proposition 1, we can move beyond first-order dynamics and minimize acceleration instead,
+which corresponds to the optimal acceleration transport problem in (Chen et al., 2018; Brigati et al., 2025)
+and leads to the proposed OAT-FM method accordingly.
+3
+
+==================================================
+PAPER: 2510.26645v1.pdf
+==================================================
+
+--- Page 1 ---
+Curly Flow Matching for
+Learning Non-gradient Field Dynamics
+Katarina Petrovi ´c1∗, Lazar Atanackovic2,3,4, Viggo Moro1, Kacper Kapu ´sniak1,
+˙Ismail ˙Ilkan Ceylan5,6,1,Michael Bronstein1,6,Avishek Joey Bose1,7†, Alexander Tong6,7,8†
+1University of Oxford,2Broad Institute of MIT and Harvard,3University of Toronto,
+4Vector Institute,5TU Wien,6AITHYRA,7Mila – Quebec AI Institute,8Université de Montréal
+Abstract
+Modeling the transport dynamics of natural processes from population-level
+observations is a ubiquitous problem in the natural sciences. Such models rely on
+key assumptions about the underlying process in order to enable faithful learning
+of governing dynamics that mimic the actual system behavior. The de facto
+assumption in current approaches relies on the principle of least action that results
+in gradient field dynamics and leads to trajectories minimizing an energy functional
+between two probability measures. However, many real-world systems, such as cell
+cycles in single-cell RNA, are known to exhibit non-gradient, periodic behavior,
+whichfundamentallycannot be captured by current state-of-the-art methods such
+as flow and bridge matching. In this paper, we introduce CURLYFLOWMATCH-
+ING(CURLY-FM), a novel approach that is capable of learning non-gradient field
+dynamics by designing and solving a Schrödinger bridge problem with a non-zero
+drift reference process—in stark contrast to typical zero-drift reference processes—
+which is constructed usinginferred velocitiesin addition to population snapshot
+data. We showcase CURLY-FM by solving the trajectory inference problems for
+single cells, computational fluid dynamics, and ocean currents with approximate
+velocities. We demonstrate that CURLY-FM can learn trajectories that better match
+both the reference process and population marginals. CURLY-FM expands flow
+matching models beyond the modeling of populations and towards the modeling
+of known periodic behavior in physical systems. Our code repository is accessible
+at:https://github.com/kpetrovicc/curly-flow-matching.git.
+q(0)
+q(1)
+(a) Asymmetriccircles
+x(0)
+x(1)
+ (b) CURLY-FM
+x(0)
+x(1)
+ (c) CFM
+Figure 1: Particle trajectories generated between samples drawn from asymmetric circles distri-
+bution at t= 0 andt= 1 and respective to underlying reference velocity field ft(xt). Traditional
+flow-based models such as OT-CFM and CFMcannotcapture cyclical patterns in physical systems.
+CURLY-FM is capable oflearning non-gradient field dynamicsbehavior in the underlying data.
+∗Correspondence to: {katarina.petrovic}@cs.ox.ac.uk
+†Equal advising
+39th Conference on Neural Information Processing Systems (NeurIPS 2025).arXiv:2510.26645v1  [cs.LG]  30 Oct 2025
+--- Page 2 ---
+1 Introduction
+Understanding the temporal evolution of multi-body systems remains a central challenge across many
+applications in life sciences [Lange et al., 2024, Pan and Zhang, 2024], as such systems are often
+characterized by complex dynamics governing their evolutionary behavior. For example, biological
+tissues are complex systems that evolve through tissue differentiation characterized by cell divisions
+and deaths as well as morphological changes. Learning evolutionary behavior in such systems can be
+formulated as atrajectory inferenceproblem [Hashimoto et al., 2016, Lavenant et al., 2024], where
+the goal is to recover full trajectories of particles given partial and noisy population-level snapshots.
+The dominant paradigm in solving the trajectory inference problems in scientific applications
+involves leveraging tools from computational optimal transport (OT) [Peyré and Cuturi, 2019] to
+learn neural dynamical systems, e.g. NeuralODE [Chen et al., 2018], such that sampled trajectories
+under the model optimize a notion of likeliness of being observed [Bunne et al., 2024b]. For instance,
+in single-cell trajectory inference, such methods broadly follow a pipeline that first infers “optimal”
+cell trajectories that follow the gradient of some potential function (often termed a Waddington
+Landscape [Waddington, 1942]), before searching for important regulators of a biological process in
+development [Schiebinger et al., 2019, Shahan et al., 2022] or disease [Tong et al., 2023, Klein et al.,
+2025]. Despite the ability to produce approximately optimal trajectories w.r.t. the energy landscape,
+current methods are limited in their ability to model only gradient-field dynamics. Consequently,
+trajectories inferred under the model are not realistic and fail to model crucial system dynamics such
+as periodic behavior that arises in natural systems, e.g., cell cycling [Riba et al., 2022] where periodic
+behavior is observed at the scale of months, days, hours, and minutes. These behaviors cannot be
+addressed by current OT-based methods, as gradient field dynamics cannot capture periodic behavior.
+Present work. In this paper, we tackle the modeling of systems governed by non-gradient field
+dynamics. We introduce CURLYFLOWMATCHING(CURLY-FM), a novel approach for learning
+non-gradient field dynamics by solving a Schrödinger bridge problem with a designed reference
+process that induces the learning of periodic behavior. Specifically, we consider reference processes
+with non-zero drift—in stark contrast to zero drift processes in approaches such as Diffusion
+Schrödinger Bridges [De Bortoli et al., 2021b, Shi et al., 2024]. Such a modification elevates
+the established (entropic optimal) mass transport problem to a new class of problems that require
+matching the reference drift while also transporting mass between time marginals associated with
+observations. As a result, solutions to this Schrödinger bridge problem are capable of learning
+non-gradient field dynamics and exhibit behaviors such as periodicity as found in cell cycling.
+In addition to conventional population snapshot data, we design CURLY-FM by leveraging approx-
+imate velocity information that is used to construct the drift of a reference process. Consequently,
+to model periodic dynamics CURLY-FM solves the Schrödinger bridge problem by decomposing
+it into a two-stage algorithm. The first stage learns a neural path interpolant by regressing against the
+drift of our constructed reference process. Unlike straight paths in optimal transform conditional flow
+matching trajectories, the neural path interpolant exhibits cyclic behavior due to the optimization
+objective of matching a constructed reference drift. In stage two, we learn, in a simulation-free
+manner, to construct the generative process that solves the mass transport problem as a mixture of
+conditional bridges built using optimal transport-based couplings that minimize the length of the
+velocity field of the neural path interpolant. The combination of our two-stage approach enables
+CURLY-FM to learn dynamics thatdo notaffect the population data, but do affect individual particles,
+which include observed periodic non-gradient field dynamics, unlike other methods (see table 1).
+We instantiate CURLY-FM on modeling a suite of problems in natural sciences that exhibit known
+non-gradient field dynamics, such as cell cycle systems found in scRNA-seq data with RNA-
+velocity [La Manno et al., 2018], ocean currents, and computational fluid dynamics for PDEs
+simulated using the Lagrangian particle discretizations [Toshev et al., 2023]. In each case, the system
+under consideration is under the influence of aknownreference process, e.g., RNA-velocity gives
+an approximation of the instantaneous velocity of a cell, which must be adhered to when solving
+the trajectory inference problem. More precisely, using the reference process drift and population
+snapshots CURLY-FM solves the Schrödinger bridge problem by searching for a bridge that matches
+the reference process as closely as possible, but also matches the marginal distributions at both
+timepoints of the system dynamics. Consequently, we show that previous flow matching approaches
+fail to model this cyclic behavior as they are not able to take advantage of the additional reference
+process information. Furthermore, while there exist simulation-based methods that are in principle
+able to learn the correct dynamics [Tong et al., 2020], we show that in practice CURLY-FM performs
+2
+--- Page 3 ---
+significantly better both in terms of accuracy to match the reference drift—enabling modeling of cyclic
+behavior (c.f. fig. 1)—while being computationally cheaper due to its simulation-free training nature.
+2 Background and preliminaries
+Given two distributions ρ0andρ1, thedistributional matching problemseeks to find a push-forward
+mapψ:Rd→Rdthat transports the initial distribution to the desired endpoint, ρ1= [ψ] #(ρ0).
+Such a problem setup is pervasive in many areas of machine learning and notably encompasses
+the standard generative modeling and optimal transport settings [De Bortoli et al., 2021a, Peyré
+et al., 2019]. In this paper, we consider the setting where each distribution ρ0andρ1is an
+empirical distribution that is accessible through a dataset of observations {xi
+0}N
+i=1∼ρ0(x0)and
+{xj
+1}N
+j=1∼ρ1(x1). Thus the modeling task is to learn the (approximate) transport mapψ.
+2.1 Continuous normalizing flows and flow matching
+One common choice for modeling ψis as a deterministic dynamic system with a time-dependent
+generator ψt: [0,1]×Rd→Rd. The solution to this dynamical system is an ordinary differential
+equation (ODE) and the learned transport map is known as acontinuous normalizing flow(CNF).
+A CNF is a time-indexed neural transport map ψt, for all time t∈[0,1] , that is trained to push
+forward samples from prior µ0to a desired target µ1. Specifically, a CNF models the ODE
+d
+dtψt(x) =f t(ψt(x)) with initial conditions ψ0(x0) =x 0andft: [0,1]×Rd→Rdbeing the
+time-dependent vector field associated with the ODE and transports samples fromµ 0→µ 1.
+The most scalable way to train CNFs is to utilize asimulation-freetraining objective which regresses
+a learned neural vector field vt,θ(xt) : [0,1]×Rd→Rdto the desired target vector field ft(xt)for all
+time. This technique is commonly known as flow-matching [Liu, 2022, Albergo and Vanden-Eijnden,
+2023, Lipman et al., 2023, Tong et al., 2024a] and has the neural transport map ψt,θwhich is obtained
+through a neural differential equation [Chen et al., 2018]d
+dtψt,θ(x) =v t,θ(ψt,θ(x)). Specifically,
+flow-matching regresses vt,θ(xt)to the targetconditionalvector field ft(xt|z)associated to the target
+flowψt(xt|z). We say that this conditional vector field ft(xt|z),generatesthe target density µ1(x1)
+by interpolating along the probability path µt(xt|z)in time. We often do not have closed-form
+access to the generating marginal vector field ft(xt). Still, with conditioning, e.g., z= (x 0, x1), we
+can obtain a simple analytic expression of a conditional vector field that achieves the same goals. The
+conditional flow-matching (CFM) objective can then be stated as a simple simulation-free regression,
+LCFM(θ) =E t,q(z),µ t(xt|z)∥vt,θ(t, x t)−f t(xt|z)∥2
+2.(1)
+The conditioning distribution q(z) can be chosen from any valid coupling, for instance, the
+independent coupling q(z) =µ 0(x0)µ1(x1). To generate samples and their corresponding log
+density according to the CNF, we may solve the following flow ODE numerically with initial
+conditionsx 0=ψ0(x0)andc= logµ 0(x0), which is the log density under the prior:
+d
+dt
+ψt,θ(xt)
+logµ t(xt)
+=
+vt,θ(t, x t)
+−∇ ·v t,θ(t, x t)
+.(2)
+In the next section, we outline a different methodology to build a transport map leveragingstochastic
+dynamics. This allows us to frame the mass transport problem as a Schrödinger bridge, which is
+well suited to modeling noisy measurements in applications such as single-cell evolution.
+3 Schrödinger Bridge with non-zero reference field
+The complex nature of particle dynamics can be captured as a mass transport problem under
+a prescribed reference process. Specifically, we model particle evolution using a parametrized
+stochastic differential equation (SDE), with drift vt,θ: [0,1]×Rd→Rd, diffusion coefficient gt>0:
+dXt=vt,θ(Xt) dt+g tdBt,X 0∼µ0,X1∼µ1,(3)
+where Btis a standard Brownian motion and by convention time t∈[0,1] flows from t= 0 to
+t= 1 such that marginal distribution at the endpoints are ρ0andρ1. These endpoints are provided
+as empirical distributions and represent endpoint observations along a transport trajectory. The SDE
+in eq. (3) induces a path measure in the space of Markov path measures (Pt,θ)t∈[0,1]∈ P(C[0,1],Rd)
+3
+
+==================================================
+PAPER: 2512.16768v3.pdf
+==================================================
+
+--- Page 1 ---
+On the Hidden Biases of Flow Matching Samplers
+Soon Hoe Lim1,2∗
+1Department of Mathematics, KTH Royal Institute of Technology
+2Nordita, KTH Royal Institute of Technology and Stockholm University
+May 15, 2026
+Abstract
+Flow matching (FM) constructs continuous-time ODE samplers by prescribing probability
+paths between a base distribution and a target distribution. In this note, we study FM through
+the lens of finite-sample plug-in estimation. In addition to replacing population expectations
+by sample averages, one may replace the target distribution itself by a finite-sample surrogate,
+ranging from the empirical measure to a smoothed estimator. This viewpoint yields a natural
+hierarchy of empirical FM models. For affine conditional flows, we derive the exact empirical
+minimizer and identify a smoothed plug-in regime in which the terminal law is exactly a
+kernel-mixture estimator. This plug-in perspective clarifies several coupled finite-sample
+biases of empirical FM. First, replacing the target law by a finite-sample surrogate changes
+the statistical target. Second, the empirical minimizer is generally not a gradient field, even
+when each conditional flow is. Third, a fixed empirical marginal path does not determine a
+unique particle dynamics: one may add extra vector fields whose probability flux has zero
+divergence without changing the marginal path. For Gaussian affine conditional paths, we
+give explicit families of such flux-null corrections. Finally, the source distribution provides a
+primary mechanism controlling upper tails of kinetic energy. In particular, Gaussian bases
+yield exponential upper-tail bounds for instantaneous and integrated kinetic energies, whereas
+polynomially tailed bases yield corresponding polynomial upper-tail bounds.
+1 Introduction
+The main goal of generative modeling is to use finitely many samples from an unknown target
+distribution to construct a sampler capable of generating new samples from the same distribution.
+Among recent approaches, flow matching (FM) [ 32,33] and the closely related variants [ 1,35]
+are notable for their flexibility and simplicity, and fit naturally within the broader framework
+of dynamical measure transport [ 38]. Given a target probability distribution, FM learns a
+time-dependent velocity field defining a deterministic continuous transformation that transports
+a base or source distribution, typically Gaussian, to the target distribution.
+A useful way to understand the finite-sample behavior of FM is through the classical distinction
+betweenpopulationandplug-inestimation. In supervised learning [ 4], one begins with an
+unknown probability measure Pon a measurable space Z, a pre-specified hypothesis space F, a
+loss functionℓ:F × Z →R, and the population risk
+R(f) :=Z
+ℓ(f, z)P(dz), f∈ F.
+A population risk minimizer is any f⋆∈arg min f∈FR(f).Since Pis unknown, one replaces it
+∗Corresponding author:shlim@kth.se.
+1arXiv:2512.16768v3  [stat.ML]  14 May 2026
+--- Page 2 ---
+2
+by a finite-sample surrogate. The most basic choice is the empirical measure
+ˆPn:=1
+nnX
+i=1δZi, Z 1, . . . , Z ni.i.d.∼P,
+which yields the empirical risk
+ˆRn(f) :=Z
+ℓ(f, z) ˆPn(dz) =1
+nnX
+i=1ℓ(f, Z i).
+This is empirical risk minimization. A second possibility is to replace Pby a regularized plug-in
+estimator ˜Pn,h, for instance one induced by a kernel density estimator, and to work instead with
+ˆRn,h(f) :=Z
+ℓ(f, z) ˜Pn,h(dz).
+This classical picture already suggests three distinct regimes:
+(i)Population level.One reasons directly with the unknown lawP.
+(ii)Raw empirical plug-in.One replacesPby the empirical measure ˆPn.
+(iii)Smoothed plug-in.One replacesPby a regularized estimator ˜Pn,h.
+The third regime is fundamental in nonparametric statistics [ 20,47]: smoothing introduces a
+bias–variance tradeoff and, in ambient dimension d, inherits the familiar curse of dimensionality
+of kernel-based estimation.
+The same hierarchy appears naturally in FM, but now the unknown object is not only a risk
+functional but an entire target law. Let p0be a base distribution on Rdand let p1be the
+unknown target distribution1. At the population level, one studies a velocity field that transports
+p0top1. At the first finite-sample level, one keeps p1fixed but replaces expectations in the FM
+objective by Monte Carlo averages. At the second level, one replaces the target law p1itself by
+the empirical measure
+ˆp1:=1
+NNX
+i=1δx(i), x(1), . . . , x(N)i.i.d.∼p 1,
+leading to araw empiricalFM model. At the third level, one replaces p1by a smoothed plug-in
+estimator ˜p1,h(e.g., a kernel density estimator). These replacements are mathematically distinct,
+and they induce different structural biases in the resulting sampler.
+Our starting point is that these three regimes should not be conflated. At the population level,
+some FM constructions admit gradient-field velocities, a property shared by Benamou–Brenier
+optimal flows, though not sufficient by itself for optimality. By contrast, the exact raw empirical
+minimizer is a spatially weighted mixture of conditional velocity fields. Consequently, even when
+each conditional velocity field is itself a gradient field, the empirical minimizer typically is not.
+Thus the finite-sample plug-in geometry of FM differs in an essential way from its population
+counterpart. On the other hand, the smoothed plug-in viewpoint reveals a natural intermediate
+regime: for affine conditional flows with positive terminal scale, averaging conditional terminal
+laws over the empirical target measure gives exactly a kernel density estimator. This connects
+empirical flow matching (EFM) directly to classical nonparametric smoothing, together with its
+attendant bias–variance tradeoff and high-dimensional limitations.
+1We use the little pnotation for the probability distributions appearing in FM, not to be confused with the
+broader statistical introduction earlier, where we use big P. We use nfor the generic statistical discussion and N
+for the FM training sample size below.
+--- Page 3 ---
+3
+One of the goals of this note is to make this picture precise. We begin with a brief statistical
+prelude on population, empirical, and smoothed plug-in estimation. We then review FM and
+conditional flow matching (CFM), derive the exact empirical minimizer for affine conditional
+flows, identify conditions under which this minimizer fails to be a gradient field, isolate the
+smoothed plug-in regime inside affine flows, and analyze the kinetic energy of the resulting
+samplers. We also introduce an equivalence relation on empirical samplers: two velocities are
+equivalent if they induce the same divergence of probability flux [ 22] against the empirical
+marginal. This separates the density path from the particle dynamics realizing it. Taken
+together, these results show that finite-sample FM modifies the statistical target, the transport
+geometry, the particle-level dynamics, and the energetic behavior of the learned sampler in a
+coupled way. We complement the theoretical analysis with numerical experiments on exact
+empirical affine-flow samplers, showing that Gaussian bases produce light kinetic energy tails
+while Student- tbases produce notably heavier energy profiles, in agreement with the source-tail
+mechanism suggested by the theory.
+Our main contributions are as follows.
+•We formulate and study a plug-in hierarchy for finite-sample flow matching, distinguishing
+objective-level empirical approximation from empirical target and smoothed empirical target
+plug-in models.
+•For affine conditional flows, we derive the exact empirical minimizer and show that positive
+terminal scale yields a kernel density estimator at terminal time. We further prove that the
+raw empirical minimizer is generally not a gradient field, even when the individual conditional
+velocity fields are gradients, thereby identifying a finite-sample geometric obstruction to
+Benamou–Brenier optimality.
+•We show that EFM samplers are not uniquely determined by their marginal density
+paths: different velocity fields can generate the same empirical density evolution while
+inducing different particle trajectories. For variance-floored rectified flow and Gaussian
+affine conditional paths, we construct explicit families of such equivalent samplers.
+•We identify the source distribution as a key driver of kinetic energy tails in EFM samplers.
+Gaussian sources produce light energy tails, whereas polynomially tailed sources can produce
+substantially heavier ones. We prove corresponding upper-tail bounds, show their stability
+under controlled marginal-preserving velocity modifications, and explain why such growth
+control is necessary.
+We further illustrate these mechanisms with toy numerical experiments.
+While several ingredients used below are classical, the contribution of this note is to assemble
+them into a finite-sample plug-in analysis of FM and CFM. This viewpoint reveals that empirical
+target replacement simultaneously changes the terminal statistical target, destroys gradient
+structure in the empirical minimizer, leaves particle dynamics non-unique at fixed marginal path,
+and imposes source-dependent kinetic energy upper-tail behavior.
+Throughout, we use the common shorthand of writing pboth for a probability law and, when it
+exists, its density with respect to Lebesgue measure. Thus expressions such as X∼p ,T#p0=p1,
+andpt(z) should be interpreted according to context: pdenotes a probability measure in sampling
+and pushforward statements, and a density when evaluated at a point or integrated against
+Lebesgue measure. Empirical distributions are denoted by ˆpand are understood as probability
+measures, not densities. Proofs of theoretical results are deferred to the appendix.
+
+==================================================
+PAPER: 2604.04491v1.pdf
+==================================================
+
+--- Page 1 ---
+Isokinetic Flow Matching for Pathwise Straightening
+of Generative Flows
+Tauhid Khan
+Abstract
+Flow Matching (FM) constructs linear conditional probability paths, but the learnedmarginalvelocity
+field inevitably exhibits strong curvature due to trajectory superposition. This curvature severely inflates
+numerical truncation errors, bottlenecking few-step sampling. To overcome this, we introduceIsokinetic
+Flow Matching (Iso-FM), a lightweight,Jacobian-freedynamical regularizer that directly penalizes
+pathwise acceleration. By using a self-guided finite-difference approximation of the material derivative
+Dv/Dt, Iso-FM enforces local velocity consistency without requiring auxiliary encoders or expensive
+second-order autodifferentiation. Operating as a pureplug-and-playaddition to single-stage FM training,
+Iso-FM dramatically improves few-step generation. On CIFAR-10 (DiT-S/2), Iso-FM slashes conditional
+non-OT FID@2 from 78.82 to 27.13—a2.9×relative efficiency gain—and reaches a best-observed
+FID@4 of 10.23. These results firmly establish acceleration regularization as a principled, compute-
+efficient mechanism for fast generative sampling.
+1 Introduction
+This paper studies sampling efficiency in flow-based generative modeling through transport dynamics
+rather than model scaling. Our premise is that few-step quality is governed by thedynamical straightness
+of the learned velocity field. The key quantity is the material derivative
+Dv
+Dt=∂tv+ (v· ∇ x)v,(1)
+which measures acceleration along trajectories. When∥Dv/Dt∥is large, coarse ODE integration incurs
+large truncation error; when it is small, trajectories are closer to constant-velocity transport and are
+easier to integrate with few NFEs.
+Iso-FM targets this mechanism with a Jacobian-free regularizer implemented by one lookahead model
+evaluation and stop-gradient matching, while preserving the standard FM objective and single-stage
+training loop. We evaluate Iso-FM as a controlled augmentation to FM (not as an absolute SOTA
+claim): under matched DiT-S/2 CIFAR-10 settings, conditional non-OT FID@2 improves from 78.82 to
+27.13 (2.9×relative few-step efficiency gain). Figure 1 previews this mechanism: baseline FM trajectories
+bend more and exhibit higher curvature, while Iso-FM yields straighter, lower-curvature transport.
+Our main contributions are summarized as follows:
+•Dynamical Regularization for Flow Matching:We establish a direct theoretical link between
+the material derivative (Dv/Dt) of the learned Eulerian velocity field and the truncation error
+experienced during few-step ODE integration.
+•Jacobian-Free Optimization:We introduce Isokinetic Flow Matching (Iso-FM), a lightweight,
+plug-and-play regularizer that penalizes pathwise acceleration. We propose a self-guided finite-
+difference approximation that requires only standard forward evaluations and stop-gradient targets,
+entirely avoiding expensive Jacobian-vector products.
+•Improved Few-Step Efficiency:We empirically demonstrate that Iso-FM shifts the Pareto front
+for single-stage Flow Matching. On CIFAR-10 with a DiT-S/2 backbone, Iso-FM achieves a 2.9×
+relative efficiency gain at NFE=2 (FID 78.82→27.13), proving that acceleration regularization
+effectively straightens generative flows without requiring multi-stage distillation.
+1arXiv:2604.04491v1  [cs.LG]  6 Apr 2026
+--- Page 2 ---
+(a) Baseline FM vs Iso-FM trajectories
+ (b) Curvature comparison
+Figure 1: Teaser: Iso-FM suppresses path bending in low-dimensional transport. Left: baseline FM
+trajectories are more curved than Iso-FM trajectories. Right: Iso-FM yields lower curvature, consistent
+with reducing the material accelerationDv/Dt.
+2 Related Work
+2.1 Flow Matching and Eulerian Generative Models
+Generative flow models aim to construct a time-dependent vector fieldv t(x) that pushes a simple prior
+distributionp 0(e.g., a standard Gaussian) to a complex data distributionp 1. The evolution of the
+probability densityp t(x) along this vector field is governed by the continuity equation:
+∂tpt+∇ ·(p tvt) = 0.(2)
+The ideal training objective would directly match the neural networkv θ(x, t) to the true marginal vector
+fieldu t(x) that generates the target probability pathp t(x):
+Lmarginal =Et∼U(0,1),x∼p t(x)[∥vθ(x, t)−u t(x)∥2].
+However, computing the marginal vector fieldu t(x) and sampling directly from the marginal pathp t(x)
+are computationally intractable for complex datasets.
+Conditional Flow Matching (CFM) [5] bypasses this intractability by conditioning the vector field on
+individual source-target pairs. Given a source samplex 0∼p0and a target data samplex 1∼p1, we
+can construct a simple conditional probability pathp t(x|x 0, x1). Under the Optimal Transport (OT)
+formulation, this path is defined as a linear interpolation:
+xt= (1−t)x 0+tx 1.(3)
+By differentiating Equation 3 with respect to time, the corresponding conditional vector field is simply
+the constant velocity between the two endpoints:
+ut(xt|x0, x1) =x 1−x0.(4)
+The fundamental theorem of Flow Matching demonstrates that regressing against this easily computable
+conditional vector field provides identical gradients to the intractable marginal objective. This yields the
+standard FM loss:
+LFM=Et,x0,x1,xt[∥vθ(xt, t)−(x 1−x0)∥2].(5)
+While the individual conditional trajectories (Equation 3) are perfectly straight, the neural networkv θ
+does not have access to the endpoints during inference. Instead, it learns to approximate themarginal
+velocity field, which is the expectation over all possible conditional fields that pass through a given point
+xat timet:
+v(x, t) =E x0,x1∼p(x 0,x1|xt)[x1−x0].(6)
+Because independent couplings ofx 0andx 1cause many distinct conditional trajectories to intersect in
+the state space, this expectation averages out conflicting velocity directions. As a direct consequence,
+Isokinetic Flow Matching (Iso-FM)2
+--- Page 3 ---
+the resulting marginal vector fieldv(x, t) exhibits strong geometric curvature, necessitating multi-step
+numerical integration during sampling. This is a fundamental bottleneck for few-step generation, and
+motivates the need for dynamical regularization to suppress pathwise acceleration.
+2.2 Flow Straightening and Acceleration Control
+Several works address trajectory curvature to enable faster sampling.Rectified Flowiteratively refines
+the coupling (Z 0, Z1) by using samples from a pre-trained model as new data pairs, effectively ”straight-
+ening” the flow via recursive training [6]. Similarly, Optimal Transport Conditional Flow Matching
+(OT-CFM) minimizes trajectory curvature by matching source and target samples within a minibatch
+using optimal transport, creating simpler and straighter ground-truth paths for the model to learn [8].
+InMinimizing Trajectory Curvature of ODE-based Generative Models, Lee et al. explicitly connect solver
+error to path curvature and propose minimizing trajectory curvature by untangling path intersections
+through improved data-noise pairing with aβ-VAE-style encoder [4]. More recently,OAT-FMapplies
+optimal transport constraints to minimize accelerationE[∥¨x∥2] as a post-training refinement step [10].
+Shortcut Modelsgeneralize this by conditioning the network on a step-size parameterd, learning a ”short-
+cut”s θ(xt, t, d) that predicts the statex t+ddirectly. They train via a self-consistency recurrence where
+a step of size 2dmust match two steps of sized:s(x t, t,2d)≈1
+2(s(x t, t, d) +s(x t+d, t+d, d)) [2]. Unlike
+Iso-FM, Shortcut Models require variable-step conditioning and do not strictly enforce local stationarity
+of the velocity field itself. While these methods successfully straighten paths by modifying source-target
+coupling (a Lagrangian approach), Iso-FM achieves straightness in the Eulerian regime by regularizing
+the learned velocity field directly, without auxiliary encoders or requiring near-optimal couplings.
+2.3 Flow Map and Consistency Methods
+Consistency Models (CM) [7] and Flow Map Matching (FMM) [1] learn theLagrangian solution operator
+Φs→t(x) directly. The core objective enforces that points along a trajectory map to the same origin or
+endpoint:
+LCM=E[∥f θ(xt+∆t, t+ ∆t)−f θ(xt, t)∥2].(7)
+Recent extensions build upon these concepts to straighten flows.Consistency Flow Matching(CFM) [9]
+enforces self-consistency in the velocity field using a hybrid objective: a velocity-consistency penalty plus
+a terminal-consistency loss that encourages shared endpoint prediction (e.g.,x 1) along trajectories. It
+also evaluates consistency betweentandt+∆twith an EMA target network, inheriting the optimization
+dynamics of consistency training. Similarly,MeanFlow[3] modifies the regression target by introducing
+an average velocity
+Us→t=1
+t−sZt
+svτdτ,
+and enforcing an identity that relatesv ttod
+dtU.
+Position of Iso-FM.Iso-FM distinguishes itself by operating purely in theEulerianregime without
+learning an explicit integral map Φ or conditioning on step sized. Instead, it regularizes thematerial
+derivativeDv/Dtof the velocity field directly using a finite-difference approximation. Compared with
+Consistency Flow Matching [9], which emphasizes cross-time velocity consistency as a primary training
+paradigm, Iso-FM is used as aplug-and-play, Jacobian-free regularizeron top of standard FM regression.
+In this sense, Iso-FM is orthogonal rather than competitive in setup: it preserves single-stage FM training
+and can be composed with broader flow-straightening pipelines. Iso-FM occupies a distinct position: it
+neither replaces the FM objective nor learns solution maps. Instead, it modifies thegeometry of the
+learned velocity fieldby suppressing pathwise acceleration, thereby making the induced ODE integrator-
+friendly.
+3 Background: Eulerian and Lagrangian Perspectives
+Continuous-time generative models can be analyzed through two complementary mathematical lenses,
+borrowed from fluid dynamics: the Eulerian and the Lagrangian perspectives [1, 5]. Understanding this
+duality is crucial for contextualizing the computational bottlenecks of current models and justifying the
+design of Isokinetic Flow Matching.
+Isokinetic Flow Matching (Iso-FM)3
