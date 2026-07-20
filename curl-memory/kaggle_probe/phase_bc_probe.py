@@ -66,7 +66,10 @@ def euler_sampler_with_vorticity(model, device, batch_size=32, NFE=10):
             A_eps = 0.5 * (jvp_out - vjp_out)
             A_norm_sq = torch.sum(A_eps ** 2, dim=(1, 2, 3))
             
-            V_x0 += A_norm_sq * dt
+            V_x0 += A_norm_sq.detach() * dt
+            
+            # Explicitly delete intermediate graphs to free memory
+            del xt_grad, epsilon, jvp_out, vjp_out, vjp_fn, A_eps, A_norm_sq
             
         # Step
         xt = xt + vt * dt
@@ -99,9 +102,15 @@ def main():
         
     net_model.eval()
     
+    # CRITICAL FIX: Freeze all model parameters.
+    # We only need gradients w.r.t input 'xt' for JVP/VJP. 
+    # Freezing parameters prevents autograd from saving massive activation graphs for weight updates.
+    for param in net_model.parameters():
+        param.requires_grad = False
+    
     # Generation Settings
     TOTAL_IMAGES = 10000
-    BATCH_SIZE = 2 # Reduced drastically to avoid OOM with torch.func.jvp
+    BATCH_SIZE = 4 # Reduced drastically to avoid OOM with torch.func.jvp
     NFE = 10
     
     all_generated_images = []
