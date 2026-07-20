@@ -36,8 +36,12 @@ def banner(msg: str) -> None:
     print("\n" + "=" * 78 + f"\n{msg}\n" + "=" * 78)
 
 
-def load_cifar(data_root: str, n: int, device, dtype=torch.float32):
-    """CIFAR-10 train images normalized to [-1, 1]. Returns (imgs (n,3,32,32), flat (n,3072))."""
+def load_cifar(data_root: str, n: int, device, dtype=torch.float32, with_labels=False):
+    """CIFAR-10 train images normalized to [-1, 1]. Returns (imgs (n,3,32,32), flat (n,3072)).
+
+    with_labels=True also returns class labels (n,) as a third element (E2b uses them to pick
+    distinct-class image pairs for basin-boundary targets).
+    """
     from torchvision import datasets, transforms
 
     tf = transforms.Compose(
@@ -49,15 +53,18 @@ def load_cifar(data_root: str, n: int, device, dtype=torch.float32):
     else:
         ds = datasets.CIFAR10(root=data_root, train=True, download=True, transform=tf)
     loader = torch.utils.data.DataLoader(ds, batch_size=512, shuffle=False, num_workers=2)
-    imgs = []
-    got = 0
-    for xb, _ in loader:
+    imgs, labs, got = [], [], 0
+    for xb, yb in loader:
         imgs.append(xb)
+        labs.append(yb)
         got += xb.shape[0]
         if got >= n:
             break
     imgs = torch.cat(imgs, 0)[:n].to(device=device, dtype=dtype)
-    return imgs, imgs.reshape(n, -1)
+    flat = imgs.reshape(imgs.shape[0], -1)
+    if with_labels:
+        return imgs, flat, torch.cat(labs, 0)[:n].to(device)
+    return imgs, flat
 
 
 def estimate_over_points(vf, x, method, n_probes, batch=32, gen=None):

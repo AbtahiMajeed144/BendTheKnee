@@ -48,6 +48,38 @@ def p1_noised(
     return x_t, eps
 
 
+def basin_target(imgs, n, k=2, alpha=0.5, labels=None, different_class=True, generator=None):
+    """Clean targets that force a NON-degenerate v* (E2b: genuine basin boundaries).
+
+    Single-image targets make v* collapse to -I/(1-t) (Cov_w -> 0) at large t. Convex
+    combinations of k *distinct* training images sit between modes, so the posterior over
+    training points stays multi-modal and Cov_w is large -- the regime E2 never entered.
+
+      k == 2 : interpolation  (1-alpha) x_a + alpha x_b   (alpha=0.5 -> the midpoint / boundary)
+      k  > 2 : uniform mean of k images.
+
+    If `labels` is given and different_class=True, the k images come from distinct classes
+    (distant clusters -> steeper weight transition). Returns m: (n, *dim).
+    """
+    dev = imgs.device
+    N = imgs.shape[0]
+    picks = torch.empty(n, k, dtype=torch.long, device=dev)
+    if labels is not None and different_class:
+        classes = labels.unique()
+        for j in range(n):
+            cls = classes[torch.randperm(len(classes), generator=generator, device=dev)[:k]]
+            for a in range(k):
+                pool = (labels == cls[a]).nonzero(as_tuple=True)[0]
+                picks[j, a] = pool[torch.randint(len(pool), (1,), generator=generator, device=dev)]
+    else:
+        for j in range(n):
+            picks[j] = torch.randperm(N, generator=generator, device=dev)[:k]
+    grp = imgs[picks]                                    # (n, k, *dim)
+    if k == 2:
+        return (1.0 - alpha) * grp[:, 0] + alpha * grp[:, 1]
+    return grp.mean(dim=1)
+
+
 def p2_trajectory(*args, **kwargs):  # pragma: no cover - Stage 4
     raise NotImplementedError(
         "P2 (generated-trajectory points) is Stage 4 (E4/E5). Do not use it for any "
