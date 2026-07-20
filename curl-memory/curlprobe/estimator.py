@@ -125,6 +125,41 @@ def frobenius_estimates(
 
 
 # --------------------------------------------------------------------------------------
+# Calibration estimator (E2): compares the model Jacobian against the exact v* Jacobian
+# --------------------------------------------------------------------------------------
+def calibration_estimates(
+    vf: Callable[[torch.Tensor], torch.Tensor],
+    jstar_eps: Callable[[torch.Tensor], torch.Tensor],
+    x: torch.Tensor,
+    n_probes: int = 16,
+    generator: torch.Generator | None = None,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Per-sample (||A_theta||^2, ||E||^2, ||J_theta||^2, ||J*||^2) with shared probes.
+
+    vf         : the model velocity field x -> v_theta(x).
+    jstar_eps  : eps -> (grad v*) eps for the *current batch x* (exact, from vstar).
+
+    E = J_theta - J*, and since J* is symmetric, asym(E) = asym(J_theta) = A_theta, so
+        tau^2 = ||A_theta||^2 / ||E||^2   is the antisymmetric fraction of the Jacobian error.
+    The SAME eps drives the model JVP and J* eps, so the difference is a true E eps.
+    """
+    B = x.shape[0]
+    A_sq = x.new_zeros(B); E_sq = x.new_zeros(B)
+    Jt_sq = x.new_zeros(B); Js_sq = x.new_zeros(B)
+    for _ in range(n_probes):
+        eps = torch.randn(x.shape, dtype=x.dtype, device=x.device, generator=generator)
+        _, jvp_out = torch.func.jvp(vf, (x,), (eps,))        # J_theta eps
+        _, vjp_fn = torch.func.vjp(vf, x)
+        vjp_out = vjp_fn(eps)[0]                              # J_theta^T eps
+        j_star = jstar_eps(eps)                              # J* eps (exact)
+        A_sq = A_sq + _flat_sum_sq(0.5 * (jvp_out - vjp_out))
+        E_sq = E_sq + _flat_sum_sq(jvp_out - j_star)
+        Jt_sq = Jt_sq + _flat_sum_sq(jvp_out)
+        Js_sq = Js_sq + _flat_sum_sq(j_star)
+    return A_sq / n_probes, E_sq / n_probes, Jt_sq / n_probes, Js_sq / n_probes
+
+
+# --------------------------------------------------------------------------------------
 # Exact reference (small dimension only) — for the E1a agreement test
 # --------------------------------------------------------------------------------------
 def frobenius_exact_smalldim(
