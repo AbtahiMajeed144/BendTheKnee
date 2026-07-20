@@ -10,7 +10,13 @@ def get_dataloaders():
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
-    dataset = datasets.CIFAR10(root="./data", train=True, download=True, transform=transform)
+    
+    kaggle_path = "/kaggle/input/datasets/ayush1220/cifar10/cifar10/train"
+    if os.path.exists(kaggle_path):
+        print(f"Loading CIFAR-10 from Kaggle dataset: {kaggle_path}")
+        dataset = datasets.ImageFolder(root=kaggle_path, transform=transform)
+    else:
+        dataset = datasets.CIFAR10(root="./data", train=True, download=True, transform=transform)
     
     print("Extracting CIFAR-10 training set for NN computation...")
     train_images = []
@@ -95,7 +101,7 @@ def main():
     
     # Generation Settings
     TOTAL_IMAGES = 10000
-    BATCH_SIZE = 32
+    BATCH_SIZE = 8 # Reduced drastically to avoid OOM with torch.func.jvp
     NFE = 10
     
     all_generated_images = []
@@ -112,6 +118,10 @@ def main():
         
         all_generated_images.append(xt_denorm.cpu())
         all_V_x0.append(V_x0.cpu())
+        
+        # Free memory aggressively to prevent OOM
+        del xt, V_x0, xt_denorm
+        torch.cuda.empty_cache()
         
     all_generated_images = torch.cat(all_generated_images, dim=0)
     all_V_x0 = torch.cat(all_V_x0, dim=0)
