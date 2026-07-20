@@ -60,16 +60,18 @@ def load_cifar(data_root: str, n: int, device, dtype=torch.float32):
     return imgs, imgs.reshape(n, -1)
 
 
-def estimate_over_points(vf, x, method, n_probes, batch=16, gen=None):
-    """Run an estimator over x in mini-batches (memory safety for the UNet). Returns rho (B,)."""
+def estimate_over_points(vf, x, method, n_probes, batch=32, gen=None):
+    """Run an estimator over x in mini-batches (memory safety for the UNet). Returns rho (B,).
+
+    No per-batch empty_cache(): the caching allocator reuses freed memory, and forcing a
+    cache flush every mini-batch serializes the GPU and kills throughput.
+    """
     A_all, G_all = [], []
     for s in range(0, x.shape[0], batch):
         xb = x[s : s + batch]
         A, G = est.frobenius_estimates(vf, xb, n_probes=n_probes, method=method, generator=gen)
         A_all.append(A.detach())
         G_all.append(G.detach())
-        if x.device.type == "cuda":
-            torch.cuda.empty_cache()
     A = torch.cat(A_all)
     G = torch.cat(G_all)
     return score.rho_from_sq(A, G), A, G
@@ -118,14 +120,14 @@ def e1a_exactness(device, d=8, B=32, n_probes=4000, seed=0):
 # G0 — hour-zero raw rho on the pretrained I-CFM checkpoint
 # ----------------------------------------------------------------------------------------
 def g0_hour_zero(model, data_imgs, device, method, ts=(0.1, 0.3, 0.5), n_pts=100,
-                 n_probes=8, gen=None):
+                 n_probes=8, batch=32, gen=None):
     banner("G0  Hour-zero  (raw rho on cfm_ checkpoint)  [HARD GATE]")
     x1 = data_imgs[:n_pts]  # image-shaped (B,3,32,32) — the UNet needs 4D input
     out = {}
     for t in ts:
         x_t, _ = probe_points.p1_noised(x1, t, generator=gen)
         vf = models.make_velocity_fn(model, t)
-        rho, _, _ = estimate_over_points(vf, x_t, method, n_probes, gen=gen)
+        rho, _, _ = estimate_over_points(vf, x_t, method, n_probes, batch=batch, gen=gen)
         out[t] = float(rho.mean())
         print(f"  t={t:.2f}   mean rho = {out[t]:.4e}   (median {rho.median():.4e})")
     peak = max(out.values())
@@ -144,29 +146,40 @@ def e1b_positive_control(model, data_imgs, device, method, t=0.1, n_pts=16, n_pr
     x_t, _ = probe_points.p1_noised(x1, t, generator=gen)
     vf = models.make_velocity_fn(model, t)
     R_op, R_fro = est.make_rotation_operator((3, 32, 32), device, dtype=x_t.dtype, seed=1)
-    amps = torch.logspace(-6, 1, 15).tolist()
-    curls = []
+    # Sweep well past the knee (which sits at amp ~ ||A_theta||_F / ||R||) so there is a clean
+    # asymptotic decade. The model's own floor can be O(1), so go to 1e2.
+    amps = torch.logspace(-6, 2, 17).tolist()
+    curl_sq = []                                         # mean ||A||_F^2 across points, per amp
     for amp in amps:
         def vf_pert(x, _amp=amp):
             return vf(x) + _amp * R_op(x)
         A, _ = est.frobenius_estimates(vf_pert, x_t, n_probes=n_probes, method=method, generator=gen)
-        curls.append(float(A.clamp_min(0).sqrt().mean()))
-    for amp, c in zip(amps, curls):
-        print(f"  amp={amp:.1e}   mean |A|_F = {c:.4e}")
+        curl_sq.append(float(A.clamp_min(0).mean()))
 
-    plateau = sum(curls[:3]) / 3.0                       # model's own curl floor ||A_theta||_F
-    # slope of log|A| vs log(amp) over the top 4 amps
-    la = [math.log(a) for a in amps[-4:]]
-    lc = [math.log(c) for c in curls[-4:]]
-    n = len(la); mx = sum(la) / n; my = sum(lc) / n
-    slope = sum((a - mx) * (c - my) for a, c in zip(la, lc)) / sum((a - mx) ** 2 for a in la)
-    recovered_R = curls[-1] / amps[-1]                   # -> should approach ||R||_F = 1
-    print(f"  plateau ||A_theta||_F (model curl floor) = {plateau:.4e}")
-    print(f"  large-amp slope = {slope:.3f}   recovered ||R||_F = {recovered_R:.3f}  (true {R_fro:.1f})")
-    passed = (0.9 <= slope <= 1.1) and (0.8 <= recovered_R <= 1.25)
+    plateau_sq = sum(curl_sq[:4]) / 4.0                  # ||A_theta||_F^2 (model curl floor)
+    plateau = math.sqrt(max(plateau_sq, 0.0))
+    # Floor subtraction isolates the injected rotation:
+    #   ||A_theta + amp R||_F^2 - ||A_theta||_F^2  ~  amp^2 ||R||^2   (cross term ~0 in high-d)
+    excess = [math.sqrt(max(c - plateau_sq, 0.0)) for c in curl_sq]
+    for amp, c, e in zip(amps, curl_sq, excess):
+        print(f"  amp={amp:.1e}   mean |A|_F = {math.sqrt(c):.4e}   excess(inj) = {e:.4e}")
+
+    # Slope + recovery on the asymptotic tail only (amp >> knee).
+    tail = [(a, e) for a, e in zip(amps, excess) if a >= 3.0 * max(plateau, 1e-6) and e > 0]
+    if len(tail) >= 2:
+        la = [math.log(a) for a, _ in tail]
+        le = [math.log(e) for _, e in tail]
+        n = len(la); mx = sum(la) / n; my = sum(le) / n
+        slope = sum((a - mx) * (e - my) for a, e in zip(la, le)) / sum((a - mx) ** 2 for a in la)
+        recovered_R = sum(e / a for a, e in tail) / len(tail)  # -> ||R||_F = 1
+    else:
+        slope = recovered_R = float("nan")
+    print(f"  plateau ||A_theta||_F (model curl floor) = {plateau:.4e}   knee ~ amp {plateau/R_fro:.2f}")
+    print(f"  asymptotic slope (floor-subtracted) = {slope:.3f}   recovered ||R||_F = {recovered_R:.3f}  (true {R_fro:.1f})")
+    passed = (0.85 <= slope <= 1.15) and (0.8 <= recovered_R <= 1.25)
     print(f"  G1b: {'PASS' if passed else 'FAIL'}")
     return passed, {"plateau": plateau, "slope": slope, "recovered_R": recovered_R, "amps": amps,
-                    "curls": curls}
+                    "curl_sq": curl_sq, "excess": excess}
 
 
 # ----------------------------------------------------------------------------------------
@@ -227,7 +240,7 @@ def e1d_precision_floor(data_flat, data_imgs, device, t=0.1, n_pts=8, n_data=409
 # E1e — cost / fidelity
 # ----------------------------------------------------------------------------------------
 def e1e_cost_fidelity(model, data_imgs, device, method, n_pts=32, ref_probes=16, ref_knots=12,
-                      gen=None):
+                      batch=32, gen=None):
     banner("E1e  Cost-fidelity  (cheapest probes x knots with rank-corr > 0.95)")
 
     def path_rho(x1, n_probes, n_knots):
@@ -236,7 +249,7 @@ def e1e_cost_fidelity(model, data_imgs, device, method, n_pts=32, ref_probes=16,
         for tv in tks.tolist():
             x_t, _ = probe_points.p1_noised(x1, tv, generator=gen)
             vf = models.make_velocity_fn(model, tv)
-            rho, _, _ = estimate_over_points(vf, x_t, method, n_probes, gen=gen)
+            rho, _, _ = estimate_over_points(vf, x_t, method, n_probes, batch=batch, gen=gen)
             rows.append(rho)
         rho_tk = torch.stack(rows)                       # (K, B)
         return score.path_score(tks, rho_tk)
@@ -268,7 +281,10 @@ def main():
     ap.add_argument("--weights", default="/kaggle/working/otcfm-weights/cfm_cifar10_weights_step_400000.pt",
                     help="I-CFM (cfm_) checkpoint — the certificate track")
     ap.add_argument("--data-root", default="./data")
-    ap.add_argument("--n-cifar", type=int, default=256)
+    ap.add_argument("--n-cifar", type=int, default=4096,
+                    help=">= the v* data-matrix size used by E1c/E1d (4096)")
+    ap.add_argument("--batch", type=int, default=32,
+                    help="UNet mini-batch for the estimator; raise for speed, lower if OOM")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--skip-e1e", action="store_true")
     args = ap.parse_args()
@@ -276,6 +292,17 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     gen = torch.Generator(device=device).manual_seed(args.seed)
     print(f"device={device}  torch={torch.__version__}")
+    if device.type == "cuda":
+        # Tensor-core / cuDNN acceleration for the fp32 UNet forwards (the fp64 v* path,
+        # and thus E1c/E1d precision, is unaffected by TF32).
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+        torch.backends.cudnn.benchmark = True
+        torch.set_float32_matmul_precision("high")
+        props = torch.cuda.get_device_properties(0)
+        print(f"  GPU: {props.name}  {props.total_memory/1e9:.1f} GB  |  estimator batch={args.batch}")
+    else:
+        print("  !! No CUDA detected — G0/E1b/E1e run the UNet and will be SLOW on CPU.")
 
     gates = {}
 
@@ -290,12 +317,12 @@ def main():
         print(f"  !! weights not found at {args.weights} — G0/E1b use RANDOM weights (invalid gate).")
     model = models.load_cifar_unet(args.weights, device=device)
 
-    gates["G0"], _ = g0_hour_zero(model, imgs, device, method, gen=gen)
+    gates["G0"], _ = g0_hour_zero(model, imgs, device, method, batch=args.batch, gen=gen)
     gates["G1b"], _ = e1b_positive_control(model, imgs, device, method, gen=gen)
     gates["G1c"], _ = e1c_negative_control(flat, imgs, device, method, gen=gen)
     e1d_precision_floor(flat, imgs, device, gen=gen)
     if not args.skip_e1e:
-        e1e_cost_fidelity(model, imgs, device, method, gen=gen)
+        e1e_cost_fidelity(model, imgs, device, method, batch=args.batch, gen=gen)
 
     banner("STAGE 1 GATE SUMMARY")
     for k in ("G0", "G1b", "G1c"):

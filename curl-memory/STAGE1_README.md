@@ -37,8 +37,10 @@ Get this repo's `curl-memory/` into the notebook (clone your repo, or upload the
   --weights /kaggle/working/otcfm-weights/cfm_cifar10_weights_step_400000.pt
 ```
 
-CIFAR-10 auto-downloads via torchvision (enable notebook internet), or is read from
-`/kaggle/input/.../cifar10/train` if that dataset is attached.
+**CIFAR-10:** the loader auto-detects the attached dataset at
+`/kaggle/input/datasets/ayush1220/cifar10/cifar10/train` (ImageFolder over the class
+subdirs, e.g. `.../train/dog/0002.png`) — no torchvision download and no notebook internet
+needed for the data. If that path is absent it falls back to a torchvision download.
 
 ## Reading the output
 
